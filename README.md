@@ -2,7 +2,7 @@
 
 A comprehensive solution for using the consumer Tobii Eye Tracker 5 as a research instrument, featuring continuous recording, automated data analysis, and experiment integration capabilities.
 
-![Gaze Analysis Example](data/gaze_data_20250918_141034_plot)
+![Gaze Analysis Example](data/gaze_data_20250918_141034_plot.png)
 
 ## Overview
 
