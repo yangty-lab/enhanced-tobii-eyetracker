@@ -1,7 +1,6 @@
 # Enhanced Tobii Eye Tracker 5 for Research
 
 A comprehensive solution for using the consumer Tobii Eye Tracker 5 as a research instrument, featuring continuous recording, automated data analysis, and experiment integration capabilities.
-
 ![Gaze Analysis Example](data/gaze_data_20250918_141034_plot.png)
 
 ## Overview
@@ -98,12 +97,13 @@ python python/enhanced_controller.py --help
 ### Quick Start
 
 ```bash
-# Terminal 1: Start the eye tracker program
-cd bin
+# Terminal MINGW64: Start the eye tracker program
+cd /C/Users/ASUS/OneDrive/桌面/enhanced-tobii-eyetracker/bin
 ./eyeTrack.exe
 
-# Terminal 2: Run Python controller
-cd python
+# Terminal anconda prompt : Run Python controller
+cd C:\Users\ASUS\OneDrive\桌面\enhanced-tobii-eyetracker\python
+conda activate eyetracking
 python enhanced_controller.py
 ```
 
