@@ -1,0 +1,1 @@
+human_time	tobii_timestamp_us	x_position	y_position
