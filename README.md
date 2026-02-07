@@ -98,13 +98,19 @@ python python/enhanced_controller.py --help
 
 ```bash
 # Terminal MINGW64: Start the eye tracker program
-cd /C/Users/ASUS/OneDrive/桌面/enhanced-tobii-eyetracker/bin
+cd /C/enhanced-tobii-eyetracker/bin
 ./eyeTrack.exe
 
 # Terminal anconda prompt : Run Python controller
-cd C:\Users\ASUS\OneDrive\桌面\enhanced-tobii-eyetracker\python
+cd C:\enhanced-tobii-eyetracker\python
 conda activate eyetracking
 python enhanced_controller.py
+
+# Terminal cmd prompt : Run Python controller
+.venv\Scripts\activate  # 啟用虛擬環境
+cd C:\enhanced-tobii-eyetracker\python # 啟用虛擬環境
+python enhanced_controller.py
+deactivate  # 用完後離開虛擬環境
 ```
 
 ### Command Reference

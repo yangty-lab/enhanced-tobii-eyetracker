@@ -5,6 +5,19 @@ import os
 import glob
 import pandas as pd
 import matplotlib.pyplot as plt
+from scipy.stats import gaussian_kde
+import numpy as np
+
+import sys
+import os
+# 動態取得 utils.py 所在的資料夾路徑
+utils_path = os.path.dirname(os.path.abspath(__file__))
+sys.path.append(os.path.join(utils_path, "/src")) 
+import utils
+
+
+
+
 
 class EnhancedEyeTrackingController:
     def __init__(self, host='127.0.0.1', port=1234):
@@ -17,23 +30,7 @@ class EnhancedEyeTrackingController:
         """Get current time in human readable format with milliseconds"""
         now = datetime.datetime.now()
         return now.strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
-    
-    def find_latest_data_file(self):
-        """Find the most recent gaze data file"""
-        # Look for files matching the pattern gaze_data_*.txt
-        pattern = os.path.join(self.data_directory, "gaze_data_*.txt")
-        data_files = glob.glob(pattern)
-        
-        if not data_files:
-            # Fallback to old filename format
-            old_file = os.path.join(self.data_directory, "gaze_data.txt")
-            if os.path.exists(old_file):
-                return old_file
-            return None
-        
-        # Return the most recently modified file
-        latest_file = max(data_files, key=os.path.getmtime)
-        return latest_file
+
     
     def list_all_data_files(self):
         """List all available data files with timestamps"""
@@ -121,7 +118,7 @@ class EnhancedEyeTrackingController:
     def check_data_file_exists(self, file_path=None):
         """Check if data file exists and show basic info"""
         if file_path is None:
-            file_path = self.find_latest_data_file()
+            file_path = utils.find_latest_data_file()
             
         if file_path and os.path.exists(file_path):
             try:
@@ -144,7 +141,7 @@ class EnhancedEyeTrackingController:
     def show_data_preview(self, file_path=None):
         """Show preview of collected data"""
         if file_path is None:
-            file_path = self.find_latest_data_file()
+            file_path = utils.find_latest_data_file()
             
         exists, file_path = self.check_data_file_exists(file_path)
         if not exists:
@@ -173,7 +170,7 @@ class EnhancedEyeTrackingController:
     def plot_gaze_data(self, file_path=None):
         """Create a simple plot of gaze data"""
         if file_path is None:
-            file_path = self.find_latest_data_file()
+            file_path = self.utils.find_latest_data_file()
             
         exists, file_path = self.check_data_file_exists(file_path)
         if not exists:
@@ -215,8 +212,7 @@ class EnhancedEyeTrackingController:
             ax3.grid(True, alpha=0.3)
             
             # Heatmap of gaze positions
-            from scipy.stats import gaussian_kde
-            import numpy as np
+
             
             # Create grid for heatmap
             x_grid = np.linspace(0, 1, 50)
