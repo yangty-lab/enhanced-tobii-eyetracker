@@ -13,7 +13,7 @@ import os
 # 動態取得 utils.py 所在的資料夾路徑
 utils_path = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(os.path.join(utils_path, "/src")) 
-import utils
+import python.utils as utils
 
 
 
