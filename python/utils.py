@@ -6,41 +6,54 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.stats import gaussian_kde
-from dataclasses import dataclass
-from typing import Optional, List, Dict, Tuple, Any
+from dataclasses import dataclass, field
+from typing import Optional, List, Dict, Any
+
+# ==========================================
+# 0. 路徑錨點 (Path Anchoring) - 關鍵修正
+# ==========================================
+# 取得 utils.py 目前所在的絕對路徑
+_CURRENT_SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+
+# 假設資料結構如下：
+# Project/
+#   ├── data/
+#   └── src/
+#       └── utils.py
+# 所以我們要從 utils.py 往上一層 (Project) 找 data
+_DEFAULT_DATA_PATH = os.path.join(os.path.dirname(_CURRENT_SCRIPT_DIR), "data")
+
+# 確保路徑結尾沒有多餘斜線，並正規化分隔符號 (Windows/Mac 通用)
+_DEFAULT_DATA_PATH = os.path.normpath(_DEFAULT_DATA_PATH) + os.sep
 
 # ==========================================
 # 1. 資料結構與配置 (Data Structures & Config)
-#    Immutable data containers to pass state
 # ==========================================
 
 @dataclass(frozen=True)
 class NetworkConfig:
-    """網路連線配置 (Network Configuration)"""
+    """網路連線配置"""
     host: str = '127.0.0.1'
     port: int = 1234
 
 @dataclass(frozen=True)
 class FileConfig:
-    """檔案路徑配置 (File Path Configuration)"""
-    base_dir: str = "../data/"
+    """
+    檔案路徑配置
+    base_dir 預設為我們剛剛算出來的 _DEFAULT_DATA_PATH
+    """
+    base_dir: str = _DEFAULT_DATA_PATH
     file_pattern: str = "gaze_data_*.txt"
     fallback_file: str = "gaze_data.txt"
 
 # ==========================================
-# 2. 純函數：邏輯與轉換 (Pure Functions)
-#    No side effects, deterministic output
+# 2. 純函數：邏輯與轉換
 # ==========================================
 
 def get_current_timestamp() -> str:
-    """生成人類可讀的時間戳字串"""
     return datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
 
 def format_file_metadata(file_path: str) -> Dict[str, Any]:
-    """
-    將檔案屬性轉換為結構化字典
-    雖然涉及 os.stat (IO)，但在邏輯層視為資料讀取轉換
-    """
     try:
         stat = os.stat(file_path)
         mod_time = datetime.datetime.fromtimestamp(stat.st_mtime).strftime("%Y-%m-%d %H:%M:%S")
@@ -48,19 +61,14 @@ def format_file_metadata(file_path: str) -> Dict[str, Any]:
             'path': file_path,
             'filename': os.path.basename(file_path),
             'modified': mod_time,
-            'timestamp_val': stat.st_mtime, # 用於排序
+            'timestamp_val': stat.st_mtime,
             'size_kb': round(stat.st_size / 1024, 1)
         }
     except Exception as e:
         return {'path': file_path, 'error': str(e), 'timestamp_val': 0}
 
 def compute_gaze_statistics(df: pd.DataFrame) -> Dict[str, Any]:
-    """
-    計算凝視數據的統計特徵 (Pure Calculation)
-    """
-    if df.empty:
-        return {}
-    
+    if df.empty: return {}
     return {
         'count': len(df),
         'duration_start': df['human_time'].iloc[0],
@@ -78,157 +86,126 @@ def compute_gaze_statistics(df: pd.DataFrame) -> Dict[str, Any]:
     }
 
 # ==========================================
-# 3. I/O 副作用：網路與檔案 (IO / Side Effects)
-#    Interactions with the outside world
+# 3. I/O 副作用：網路與檔案
 # ==========================================
 
 def send_udp_command(config: NetworkConfig, command: str) -> bool:
-    """
-    發送 UDP 指令至 C++ 端
-    """
     ts = get_current_timestamp()
     print(f"[{ts}] Sending command '{command}'...")
-    
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
             sock.sendto(command.encode(), (config.host, config.port))
-        print(f"[{ts}] Command sent successfully.")
+        print(f"[{ts}] Command sent.")
         return True
     except Exception as e:
-        print(f"[{ts}] Failed to send command: {e}")
+        print(f"[{ts}] Failed to send: {e}")
         return False
 
 def find_data_files(config: FileConfig) -> List[Dict[str, Any]]:
-    """
-    搜尋並返回排序後的檔案列表
-    """
-    # 建立完整路徑
+    """搜尋檔案，如果找不到會印出詳細的路徑資訊以便除錯"""
+    
+    # 組合路徑
     pattern_path = os.path.join(config.base_dir, config.file_pattern)
     files = glob.glob(pattern_path)
     
-    # Fallback 檢查
+    # 除錯訊息：讓你知道程式到底去哪裡找檔案了
     if not files:
-        old_file = os.path.join(config.base_dir, config.fallback_file)
-        if os.path.exists(old_file):
-            files = [old_file]
+        # 嘗試找 Fallback
+        fallback_path = os.path.join(config.base_dir, config.fallback_file)
+        if os.path.exists(fallback_path):
+            files = [fallback_path]
         else:
+            # 這是重點：如果還是找不到，印出「絕對路徑」告訴你它在哪裡找
+            print(f"\n[⚠️ DEBUG INFO] No files found.")
+            print(f"   - Looking in: {config.base_dir}")
+            print(f"   - Full Pattern: {pattern_path}")
+            print(f"   - Please check if your 'data' folder is actually at that path.\n")
             return []
             
-    # 轉換為 metadata 並排序 (最新在最前)
     file_list = [format_file_metadata(f) for f in files]
     file_list.sort(key=lambda x: x['timestamp_val'], reverse=True)
-    
     return file_list
 
 def load_data_frame(file_path: str) -> Optional[pd.DataFrame]:
-    """
-    安全讀取 CSV/TSV 檔案
-    """
     if not os.path.exists(file_path):
         print(f"File not found: {file_path}")
         return None
-        
     try:
-        # 假設檔案格式為 Tab 分隔
         df = pd.read_csv(file_path, sep='\t')
-        if len(df) <= 1: # 檢查是否只有 header 或空
-             print(f"File {os.path.basename(file_path)} seems empty or invalid.")
+        if len(df) <= 1:
+             print(f"Warning: File {os.path.basename(file_path)} seems empty.")
         return df
     except Exception as e:
-        print(f"Error reading file {file_path}: {e}")
+        print(f"Error reading file: {e}")
         return None
 
 # ==========================================
-# 4. 視覺化副作用 (Visualization / Side Effects)
-#    Matplotlib logic separated from data loading
+# 4. 視覺化副作用
 # ==========================================
 
-def render_analysis_plot(df: pd.DataFrame, source_filename: str, save_dir: str = "../data/"):
-    """
-    繪製並儲存分析圖表
-    """
+def render_analysis_plot(df: pd.DataFrame, source_filename: str):
     if df.empty:
         print("No data to plot.")
         return
 
     try:
+        # 確保儲存路徑與來源檔案在同一目錄
+        save_dir = os.path.dirname(source_filename)
+        base_name = os.path.splitext(os.path.basename(source_filename))[0]
+        plot_path = os.path.join(save_dir, f"{base_name}_plot.png")
+
         fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=(12, 8))
         
-        # 1. Gaze Trajectory
+        # 1. Trajectory
         ax1.plot(df['x_position'], df['y_position'], 'b-', alpha=0.6, linewidth=1)
-        ax1.scatter(df['x_position'], df['y_position'], c=range(len(df)), cmap='viridis', s=10, alpha=0.7)
-        ax1.set_xlim(0, 1)
-        ax1.set_ylim(0, 1)
-        ax1.set_title('Gaze Trajectory (Color=Time)')
-        ax1.grid(True, alpha=0.3)
-        ax1.invert_yaxis() # 眼動座標通常 Y 向下為正，若需反轉可調整此處，原程式無反轉但 Heatmap 有
+        ax1.scatter(df['x_position'], df['y_position'], c=range(len(df)), cmap='viridis', s=10)
+        ax1.set_xlim(0, 1); ax1.set_ylim(0, 1)
+        ax1.set_title('Trajectory'); ax1.invert_yaxis()
 
-        # 2. X over time
-        ax2.plot(df.index, df['x_position'], 'r-', linewidth=1)
+        # 2. X Time
+        ax2.plot(df.index, df['x_position'], 'r-')
         ax2.set_title('X Position Over Time')
-        ax2.grid(True, alpha=0.3)
 
-        # 3. Y over time
-        ax3.plot(df.index, df['y_position'], 'g-', linewidth=1)
+        # 3. Y Time
+        ax3.plot(df.index, df['y_position'], 'g-')
         ax3.set_title('Y Position Over Time')
-        ax3.grid(True, alpha=0.3)
 
-        # 4. Density Heatmap
-        x_grid = np.linspace(0, 1, 50)
-        y_grid = np.linspace(0, 1, 50)
+        # 4. Heatmap
+        x_grid = np.linspace(0, 1, 50); y_grid = np.linspace(0, 1, 50)
         X, Y = np.meshgrid(x_grid, y_grid)
-        
         positions = np.vstack([df['x_position'], df['y_position']])
         kernel = gaussian_kde(positions)
         density = kernel(np.vstack([X.ravel(), Y.ravel()])).reshape(X.shape)
         
-        # origin='upper' 對應螢幕座標系 (左上為 0,0)
-        im = ax4.imshow(density, extent=[0, 1, 1, 0], origin='upper', cmap='hot')
-        ax4.set_title('Gaze Density Heatmap')
-        ax4.set_xticks([])
-        ax4.set_yticks([])
-        plt.colorbar(im, ax=ax4)
+        ax4.imshow(density, extent=[0, 1, 1, 0], origin='upper', cmap='hot')
+        ax4.set_title('Density Heatmap')
+        ax4.set_xticks([]); ax4.set_yticks([])
 
-        # Save
-        base_name = os.path.splitext(os.path.basename(source_filename))[0]
-        plot_path = os.path.join(save_dir, f"{base_name}_plot.png")
-        plt.savefig(plot_path, dpi=150, bbox_inches='tight')
+        plt.tight_layout()
+        plt.savefig(plot_path, dpi=150)
         print(f"Plot saved to: {plot_path}")
-        
         plt.show()
-        plt.close(fig) # 釋放記憶體
-
+        plt.close(fig)
     except Exception as e:
-        print(f"Error generating plot: {e}")
+        print(f"Plot error: {e}")
 
 # ==========================================
-# 5. 互動式輔助函數 (Interactive Helpers)
+# 5. 互動輔助
 # ==========================================
 
 def prompt_user_selection(options: List[Dict[str, Any]]) -> Optional[str]:
-    """
-    處理使用者選單邏輯
-    Return: Selected file path or None
-    """
     if not options:
         print("No files available.")
         return None
-        
     print(f"\n=== AVAILABLE DATA FILES ===")
     for i, info in enumerate(options, 1):
-        print(f"{i}. {info['filename']} (Modified: {info['modified']}, Size: {info['size_kb']}KB)")
+        print(f"{i}. {info['filename']} ({info['size_kb']}KB)")
     
     while True:
         try:
-            choice = input(f"Select file (1-{len(options)}) or 0 for latest: ").strip()
-            if choice == '0':
-                return options[0]['path']
-            
-            idx = int(choice) - 1
-            if 0 <= idx < len(options):
-                return options[idx]['path']
-            print("Invalid selection.")
-        except ValueError:
-            print("Please enter a number.")
-        except KeyboardInterrupt:
-            return None
+            c = input(f"Select (1-{len(options)}) or 0 for latest: ").strip()
+            if c == '0': return options[0]['path']
+            idx = int(c) - 1
+            if 0 <= idx < len(options): return options[idx]['path']
+        except: pass
+        return None
