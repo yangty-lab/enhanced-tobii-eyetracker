@@ -143,52 +143,71 @@ def load_data_frame(file_path: str) -> Optional[pd.DataFrame]:
 # 4. 視覺化副作用
 # ==========================================
 
-def render_analysis_plot(df: pd.DataFrame, source_filename: str):
+def render_analysis_plot(df: pd.DataFrame, source_filename: str, visual_angle_pct: float = 0.04):
+    """
+    修正尺寸比例的視覺化函數：
+    1. 確保所有子圖在 2x2 佈局中均呈現 16:9 比例。
+    2. 統一像素空間，修正 Trajectory 變形問題。
+    """
     if df.empty:
         print("No data to plot.")
         return
 
     try:
-        # 確保儲存路徑與來源檔案在同一目錄
         save_dir = os.path.dirname(source_filename)
         base_name = os.path.splitext(os.path.basename(source_filename))[0]
-        plot_path = os.path.join(save_dir, f"{base_name}_plot.png")
+        plot_path = os.path.join(save_dir, f"{base_name}_analysis.png")
 
-        fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=(12, 8))
+        # 使用 layout="constrained" 自動優化間距，figsize 設為 16:9 的倍數
+        fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=(16, 9), layout="constrained")
         
-        # 1. Trajectory
-        ax1.plot(df['x_position'], df['y_position'], 'b-', alpha=0.6, linewidth=1)
-        ax1.scatter(df['x_position'], df['y_position'], c=range(len(df)), cmap='viridis', s=10)
-        ax1.set_xlim(0, 1); ax1.set_ylim(0, 1)
-        ax1.set_title('Trajectory'); ax1.invert_yaxis()
+        x_px = df['x_position'] * 1920
+        y_px = df['y_position'] * 1080
+        positions = np.vstack([x_px, y_px])
+        time_index = np.arange(len(df))
 
-        # 2. X Time
-        ax2.plot(df.index, df['x_position'], 'r-')
-        ax2.set_title('X Position Over Time')
+        # --- 圖表 1: Trajectory (軌跡) ---
+        ax1.plot(x_px, y_px, 'b-', alpha=0.3, linewidth=1)
+        ax1.scatter(x_px, y_px, c=time_index, cmap='viridis', s=5)
+        ax1.set_xlim(0, 1920); ax1.set_ylim(1080, 0)
+        # 不使用 set_aspect('equal') 或手動比例，讓它填滿 16:9 的子圖區域
+        ax1.set_title('Gaze Trajectory (1920x1080)')
 
-        # 3. Y Time
-        ax3.plot(df.index, df['y_position'], 'g-')
-        ax3.set_title('Y Position Over Time')
+        # --- 圖表 2: X Position ---
+        ax2.plot(time_index, x_px, 'r-', linewidth=1)
+        ax2.set_xlim(0, len(df)); ax2.set_ylim(0, 1920)
+        ax2.set_title('X Coordinate Over Time')
 
-        # 4. Heatmap
-        x_grid = np.linspace(0, 1, 50); y_grid = np.linspace(0, 1, 50)
-        X, Y = np.meshgrid(x_grid, y_grid)
-        positions = np.vstack([df['x_position'], df['y_position']])
-        kernel = gaussian_kde(positions)
-        density = kernel(np.vstack([X.ravel(), Y.ravel()])).reshape(X.shape)
+        # --- 圖表 3: Y Position ---
+        ax3.plot(time_index, y_px, 'g-', linewidth=1)
+        ax3.set_xlim(0, len(df)); ax3.set_ylim(1080, 0) # 頂部 0, 底部 1080
+        ax3.set_title('Y Coordinate Over Time')
+
+        # --- 圖表 4: Heatmap (熱力圖) ---
+        grid_x, grid_y = np.mgrid[0:1920:200j, 0:1080:200j]
         
-        ax4.imshow(density, extent=[0, 1, 1, 0], origin='upper', cmap='hot')
-        ax4.set_title('Density Heatmap')
-        ax4.set_xticks([]); ax4.set_yticks([])
+        # KDE 計算
+        sigma_px = 1920 * visual_angle_pct
+        data_std = np.std(positions, axis=1).mean()
+        bw = sigma_px / (data_std if data_std > 0 else 1.0)
+        
+        kernel = gaussian_kde(positions, bw_method=bw)
+        zi = kernel(np.vstack([grid_x.ravel(), grid_y.ravel()])).reshape(grid_x.shape)
 
-        plt.tight_layout()
-        plt.savefig(plot_path, dpi=150)
-        print(f"Plot saved to: {plot_path}")
+        # 使用 aspect='auto' 讓熱力圖填滿子圖框，extent 確保座標正確
+        ax4.imshow(zi.T, extent=[0, 1920, 1080, 0], 
+                   origin='upper', cmap='hot', aspect='auto')
+        ax4.set_xlim(0, 1920); ax4.set_ylim(1080, 0)
+        ax4.set_title(f'Heatmap (1° ≈ {visual_angle_pct*100:.0f}%)')
+
+        # 儲存與顯示
+        plt.savefig(plot_path, dpi=200)
+        print(f"Analysis saved to: {plot_path}")
         plt.show()
         plt.close(fig)
-    except Exception as e:
-        print(f"Plot error: {e}")
 
+    except Exception as e:
+        print(f"Visualization error: {e}")
 # ==========================================
 # 5. 互動輔助
 # ==========================================
